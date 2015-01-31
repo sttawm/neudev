@@ -1,0 +1,208 @@
+neudev = function () {
+    'use strict';
+
+    var V = [], // sorted x-coordinates (Vertical Lines)
+        H = [], // sorted y-intervals, by bottom (Horizontal Lines)
+        G = [], // group marking for horizontal lines
+        S_ij = [[], [], [], []],
+        S_11 = 0,
+        S_12 = 1,
+        S_21 = 2,
+        S_22 = 3,
+        S_NOT = -1,
+        accessors = function(S) {
+            return {
+                xl: function (i) { return S[i][0]; },
+                yl: function (i) { return S[i][1]; },
+                xh: function (i) { return S[i][2]; },
+                yh: function (i) { return S[i][3]; },
+            }
+        },
+        reuse = false; // reuse array storage (gc)
+
+    /**
+     * @param S  list of 'n iso-oriented rectangles'. By default, they are
+     *           assumed to be of the form [xmin, ymin, xmax, ymax].
+     *           Call "accessors()" to change this behavior.
+     * @param    reportPair the reportPair function, taking two indices
+     */
+    function report(S, reportPair) {
+        var i,
+            n = S.length,
+            n2 = n * 2,
+            ctx = accessors(S);
+        ctx.reportPair = reportPair;
+        ctx.x = function (vi) {
+            var r = Math.floor(vi / 2);
+            return (vi % 2 == 0? ctx.xl : ctx.xh)(r);
+        };
+
+        if (reuse) {
+            V.length = H.length = 0;
+        } else {
+            V = new Array(n2);
+            H = new Array(n);
+        }
+
+       /**
+         * Sort the x-coordinates in non-decreasing order.
+         */ 
+        for (i = 0; i < n2; i += 1) {
+            V[i] = i;
+        }
+        V.sort(function (a, b) {
+            return ctx.x(a) - ctx.x(b);
+        });
+
+        /**
+         * Sort y-intervals by lower-bound in non-decreasing order.
+         */
+        for (i = 0; i < n; i += 1) {
+            H[i] = i;
+        }
+        H.sort(function (a, b) {
+            return ctx.yl(a) - ctx.yl(b);
+        });
+
+        detect(H, 0, n2, ctx);
+    }
+
+    function detect(H, start, end, ctx) {
+
+        if (end - start < 2) {
+            return;
+        }
+
+        var i,
+            max = ctx.x(V[end - 1]),
+            min = ctx.x(V[start]),
+            mid = Math.floor(start + (end - start) / 2),
+            v, // a vertical edge
+            r, // a rectangle index
+            g; // a rectangle's group index, in detect
+
+        /**
+         * Re-use storage for the theoretical O(n).
+         */
+        if (reuse) {
+            S_ij[S_11].length = 0;
+            S_ij[S_12].length = 0;
+            S_ij[S_21].length = 0;
+            S_ij[S_22].length = 0;
+
+        } else {
+            S_ij[S_11] = [];
+            S_ij[S_12] = [];
+            S_ij[S_21] = [];
+            S_ij[S_22] = [];
+        }
+
+        /**
+         * Steps 1, 2, and 3
+         */
+        for (i = start; i < mid; i += 1) {
+            v = V[i];
+            if (v % 2 === 1) { // right edge
+                g = S_11;
+                r = (v - 1) / 2;
+
+            } else { // left edge
+                r = v / 2;
+                g = ctx.xh(r) > max ? S_12 : S_NOT;
+            }
+            G[r] = g; // group assignment of rectangle r
+        }
+
+        /**
+         * Steps 1, 2, and 3
+         */
+        for (; i < end; i += 1) {
+            v = V[i];
+            if (v % 2 === 0) { // left edge
+                g = S_22;
+                r = v / 2;
+
+            } else { // right edge
+                r = (v - 1) / 2;
+                g = ctx.xl(r) < min? S_21 : S_NOT;
+            }
+            G[r] = g; // group assignment of rectangle r
+        }
+
+        /**
+         * Subsets of rectangles, sorted according to y-interval, for stab.
+         */
+        for (i = 0; i < H.length; i += 1) {
+            r = H[i];
+            if ((g = G[r]) != -1) {
+                S_ij[g].push(r);
+            }
+        }
+
+        stab(S_ij[S_12], S_ij[S_22], ctx);
+        stab(S_ij[S_21], S_ij[S_11], ctx);
+        stab(S_ij[S_12], S_ij[S_21], ctx);
+
+        var H1 = [],
+            H2 = [],
+            xmin,
+            xmax,
+            v1max = ctx.x(V[mid - 1]),
+            v2min = ctx.x(V[mid]);
+
+        for (i = 0; i < H.length; i++) {
+            r = H[i];
+
+            xmin = ctx.xl(r);
+            xmax = ctx.xh(r);
+
+            if (xmax <= v1max || xmin <= v1max) {
+                H1.push(r);
+            }
+
+            if (xmin >= v2min || xmax >= v2min) {
+                H2.push(r);
+            }
+        }
+
+        detect(H1, start, mid, ctx);
+        detect(H2, mid, end, ctx);
+    }
+
+    function stab(A, B, ctx) {
+        var i = 0,
+            j = 0,
+            k;
+
+        while (i < A.length && j < B.length) {
+            if (ctx.yl(A[i]) < ctx.yl(B[j])) {
+                k = j;
+                while (k < B.length && ctx.yl(B[k]) < ctx.yh(A[i])) {
+                    ctx.reportPair(A[i], B[k]);
+                    k += 1;
+                }
+                i += 1;
+
+            } else {
+                k = i;
+                while (k < A.length && ctx.yl(A[k]) < ctx.yh(B[j])) {
+                    ctx.reportPair(B[j], A[k]);
+                    k += 1;
+                }
+                j += 1;
+            }
+        }
+    }
+
+    /**
+     * Defines the accessors, (or data-model) for the elemtns of S.
+     */
+    report.accessors = function(x) {
+        if (!arguments.length) {
+            return accessors;
+        }
+        accessors = x;
+    };
+
+    return report;
+};

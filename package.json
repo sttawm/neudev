@@ -1,0 +1,16 @@
+{
+    "name": "neudev",
+    "version": "0.0.1",
+    "description": "An intersection algorithm for isometric rectangles",
+    "dependencies": {},
+    "devDependencies": {
+        "vows": "0.7",
+        "uglify-js": "2",
+        "nanotimer": "0.3.1"
+    },
+    "main": "main.js",
+    "scripts": {
+        "test": "./node_modules/.bin/vows && echo"
+    }
+}
+
